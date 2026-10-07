@@ -41,6 +41,7 @@ import {
 import type { CreateAgentFormValues, LLMProviderFormEntry, MCPProxyFormEntry } from "../form/schema";
 import { BuildpackIcon } from "@agent-management-platform/views";
 import { mcpEntryVarNames } from "../utils/mcpEnvVarNames";
+import { BALLERINA_CHAT_DEFAULT_PORT, chatAgentHasOwnEndpoint } from "../utils/chatInterface";
 
 interface InternalAgentFormProps {
   formData: CreateAgentFormValues;
@@ -200,6 +201,18 @@ export const InternalAgentForm = ({
 
         // When language changes, clear errors for conditional fields
         if (field === 'language') {
+          // A Ballerina chat agent names its own port (default 9090); other
+          // languages' chat agents use the platform's fixed one.
+          if (newData.interfaceType === 'DEFAULT') {
+            if (chatAgentHasOwnEndpoint(value as string)) {
+              if (!newData.port) newData.port = BALLERINA_CHAT_DEFAULT_PORT;
+            } else {
+              newData.port = "" as unknown as number;
+              newData.basePath = "/";
+            }
+            setFieldError('port', undefined);
+            setFieldError('basePath', undefined);
+          }
           if (value === 'python') {
             // Switching to Python - clear Docker errors
             setFieldError('dockerfilePath', undefined);

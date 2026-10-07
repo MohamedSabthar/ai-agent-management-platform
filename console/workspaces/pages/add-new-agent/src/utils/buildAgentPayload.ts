@@ -16,6 +16,7 @@
  * under the License.
  */
 
+import { BALLERINA_CHAT_DEFAULT_PORT, chatAgentHasOwnEndpoint } from "./chatInterface";
 import {
   AgentKindConfigSchemaItem,
   CreateAgentRequest,
@@ -272,6 +273,12 @@ export const buildAgentCreationPayload = (
             }
             : data.interfaceType === "A2A"
             ? { port: Number(data.port) }
+            : chatAgentHasOwnEndpoint(data.language)
+            // A Ballerina chat agent (ai:Listener) serves on its own port and path.
+            ? {
+              port: Number(data.port) || BALLERINA_CHAT_DEFAULT_PORT,
+              basePath: data.basePath || "/",
+            }
             : {}),
         },
         ...(modelConfig ? { modelConfig } : {}),

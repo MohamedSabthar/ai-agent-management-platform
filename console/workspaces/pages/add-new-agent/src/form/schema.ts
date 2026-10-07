@@ -17,6 +17,7 @@
  */
 
 import { z } from 'zod';
+import { chatAgentHasOwnEndpoint } from "../utils/chatInterface";
 import {
   type InputInterfaceType,
   INPUT_LIMITS,
@@ -102,6 +103,13 @@ export const connectAgentSchema = z.object({
 
 // Schema for creating a new agent from source (full validation)
 // Note: llmProvider is intentionally excluded from Zod validation — managed as plain state.
+// Custom and A2A agents always name their port; a Ballerina chat agent
+// (ai:Listener) does too — Python chat agents use the platform's fixed port.
+const needsPort = (data: { interfaceType?: string; language?: string }) =>
+  data.interfaceType === 'CUSTOM' ||
+  data.interfaceType === 'A2A' ||
+  (data.interfaceType === 'DEFAULT' && chatAgentHasOwnEndpoint(data.language));
+
 export const createAgentSchema = z.object({
   ...baseAgentFields,
   deploymentType: z.literal('new').optional(),
@@ -253,15 +261,15 @@ export const createAgentSchema = z.object({
     .max(20, 'A maximum of 20 file mounts is allowed'),
 }).refine(
   (data) => {
-    if ((data.interfaceType === 'CUSTOM' || data.interfaceType === 'A2A') && !data.port) {
+    if (needsPort(data) && !data.port) {
       return false;
     }
     return true;
   },
-  { message: 'Port is required for custom and A2A interfaces', path: ['port'] }
+  { message: 'Port is required', path: ['port'] }
 ).refine(
   (data) => {
-    if ((data.interfaceType === 'CUSTOM' || data.interfaceType === 'A2A') && data.port !== undefined) {
+    if (needsPort(data) && data.port !== undefined) {
       if (!Number.isInteger(data.port)) return false;
       if (data.port < 1 || data.port > 65535) return false;
     }

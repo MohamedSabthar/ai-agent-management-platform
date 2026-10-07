@@ -485,7 +485,12 @@ func (s *agentManagerService) buildCreateTraitRequests(ctx context.Context, ouID
 	// Attach api-configuration trait at create time so the RestApi CRD is provisioned immediately.
 	// API key security and CORS are enabled by default; deploy time upserts with the actual policy setting.
 	if isAPIAgent && !isA2AAgent {
+		// Ballerina chat agents (ai:Listener) default to 9090, matching the workload
+		// endpoint (client.ChatAPIDefaultPort); a request-supplied port wins.
 		port := config.GetConfig().DefaultChatAPI.DefaultHTTPPort
+		if isBallerinaBuildpack {
+			port = client.ChatAPIDefaultPort(string(utils.LanguageBallerina))
+		}
 		basePath := config.GetConfig().DefaultChatAPI.DefaultBasePath
 		if req.InputInterface != nil && req.InputInterface.Port != nil && *req.InputInterface.Port > 0 {
 			port = *req.InputInterface.Port
@@ -553,6 +558,9 @@ func (s *agentManagerService) buildCreateTraitRequests(ctx context.Context, ouID
 // them, and they are the only sane guess when nothing else resolves
 func (s *agentManagerService) effectiveUpstreamInterface(ctx context.Context, ouID string, agent *models.AgentResponse, deployedImageID string) (int32, string) {
 	port := config.GetConfig().DefaultChatAPI.DefaultHTTPPort
+	if isBallerinaBuildpackAgent(agent) {
+		port = client.ChatAPIDefaultPort(string(utils.LanguageBallerina))
+	}
 	basePath := config.GetConfig().DefaultChatAPI.DefaultBasePath
 
 	iface := agent.InputInterface
