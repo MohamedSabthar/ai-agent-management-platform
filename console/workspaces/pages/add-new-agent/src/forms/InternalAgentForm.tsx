@@ -697,6 +697,7 @@ export const InternalAgentForm = ({
         llmProviders={llmProviders}
         setLLMProviders={setLLMProviders}
         agentDisplayName={formData.displayName}
+        agentLanguage={formData.language}
         initialEnvironmentName={initialEnvironmentName}
         isInitialEnvironmentLoading={isInitialEnvironmentLoading}
         externalEnvKeys={(() => {
@@ -713,6 +714,7 @@ export const InternalAgentForm = ({
         mcpProxies={mcpProxies}
         setMCPProxies={setMCPProxies}
         agentDisplayName={formData.displayName}
+        agentLanguage={formData.language}
         initialEnvironmentName={initialEnvironmentName}
         isInitialEnvironmentLoading={isInitialEnvironmentLoading}
         externalEnvKeys={(() => {

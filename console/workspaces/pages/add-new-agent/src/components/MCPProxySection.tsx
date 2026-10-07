@@ -396,6 +396,9 @@ interface MCPProxySectionProps {
   mcpProxies: MCPProxyFormEntry[];
   setMCPProxies: React.Dispatch<React.SetStateAction<MCPProxyFormEntry[]>>;
   agentDisplayName: string;
+  // Ballerina agents read configurables from BAL_CONFIG_VAR_<NAME>, so their
+  // generated variable names carry that prefix.
+  agentLanguage?: string;
   initialEnvironmentName: string | undefined;
   isInitialEnvironmentLoading?: boolean;
   externalEnvKeys?: Set<string>;
@@ -405,6 +408,7 @@ export const MCPProxySection: React.FC<MCPProxySectionProps> = ({
   mcpProxies,
   setMCPProxies,
   agentDisplayName,
+  agentLanguage,
   initialEnvironmentName,
   isInitialEnvironmentLoading = false,
   externalEnvKeys = new Set(),
@@ -451,9 +455,9 @@ export const MCPProxySection: React.FC<MCPProxySectionProps> = ({
     [proxyData],
   );
 
-  const agentNameUpper = agentDisplayName
-    ? agentDisplayName.toUpperCase().replace(/[^A-Z0-9]/g, "_")
-    : "AGENT";
+  const agentNameUpper =
+    (agentLanguage === "ballerina" ? "BAL_CONFIG_VAR_" : "") +
+    (agentDisplayName ? agentDisplayName.toUpperCase().replace(/[^A-Z0-9]/g, "_") : "AGENT");
 
   const currentDrawerProxyId =
     editingIndex !== null
