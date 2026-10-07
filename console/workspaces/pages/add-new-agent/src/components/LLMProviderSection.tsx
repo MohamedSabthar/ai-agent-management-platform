@@ -520,6 +520,9 @@ interface LLMProviderSectionProps {
   llmProviders: LLMProviderFormEntry[];
   setLLMProviders: React.Dispatch<React.SetStateAction<LLMProviderFormEntry[]>>;
   agentDisplayName: string;
+  // Ballerina agents read configurables from BAL_CONFIG_VAR_<NAME>, so their
+  // generated variable names carry that prefix.
+  agentLanguage?: string;
   initialEnvironmentName: string | undefined;
   isInitialEnvironmentLoading?: boolean;
   externalEnvKeys?: Set<string>;
@@ -529,6 +532,7 @@ export const LLMProviderSection: React.FC<LLMProviderSectionProps> = ({
   llmProviders,
   setLLMProviders,
   agentDisplayName,
+  agentLanguage,
   initialEnvironmentName,
   isInitialEnvironmentLoading = false,
   externalEnvKeys = new Set(),
@@ -609,9 +613,9 @@ export const LLMProviderSection: React.FC<LLMProviderSectionProps> = ({
     [catalogData],
   );
 
-  const agentNameUpper = agentDisplayName
-    ? agentDisplayName.toUpperCase().replace(/[^A-Z0-9]/g, "_")
-    : "AGENT";
+  const agentNameUpper =
+    (agentLanguage === "ballerina" ? "BAL_CONFIG_VAR_" : "") +
+    (agentDisplayName ? agentDisplayName.toUpperCase().replace(/[^A-Z0-9]/g, "_") : "AGENT");
 
   const currentDrawerProviderUuid =
     editingIndex !== null
