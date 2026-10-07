@@ -932,6 +932,7 @@ func ValidatePromoteAgentRequest(payload *spec.PromoteAgentRequest) error {
 	if useSource {
 		if len(payload.Env) > 0 || len(payload.Files) > 0 ||
 			payload.EnableAutoInstrumentation != nil ||
+			payload.AgentIdAsBallerinaConfigurables != nil ||
 			payload.InstrumentationVersion.IsSet() ||
 			payload.EnableApiKeySecurity != nil ||
 			payload.CorsConfig != nil ||
@@ -939,7 +940,7 @@ func ValidatePromoteAgentRequest(payload *spec.PromoteAgentRequest) error {
 			payload.EnableOAuthSecurity != nil ||
 			payload.OauthConfig != nil ||
 			payload.ResilienceTimeoutSeconds != nil {
-			return fmt.Errorf("useConfigFromSourceEnv=true is mutually exclusive with env, files, enableAutoInstrumentation, instrumentationVersion, enableApiKeySecurity, corsConfig, agentCardCorsConfig, enableOAuthSecurity, oauthConfig, and resilienceTimeoutSeconds")
+			return fmt.Errorf("useConfigFromSourceEnv=true is mutually exclusive with env, files, enableAutoInstrumentation, agentIdAsBallerinaConfigurables, instrumentationVersion, enableApiKeySecurity, corsConfig, agentCardCorsConfig, enableOAuthSecurity, oauthConfig, and resilienceTimeoutSeconds")
 		}
 	}
 
