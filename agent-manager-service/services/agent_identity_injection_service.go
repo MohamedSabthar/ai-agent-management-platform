@@ -575,7 +575,11 @@ func (s *agentIdentityInjectionService) buildEnvVars(ctx context.Context, bindin
 // guessed, because the wrong name set either crashes a Ballerina program
 // (stray BAL_CONFIG_VAR_*) or silently withholds its credentials.
 func (s *agentIdentityInjectionService) agentIDAsBalConfigurables(ctx context.Context, binding *models.AgentThunderClient) (bool, error) {
-	cfg, err := s.envConfigRepo.Get(ctx, binding.OUID, binding.ProjectName, binding.AgentName, binding.EnvironmentName)
+	return s.agentIDAsBalConfigurablesFor(ctx, binding.OUID, binding.ProjectName, binding.AgentName, binding.EnvironmentName)
+}
+
+func (s *agentIdentityInjectionService) agentIDAsBalConfigurablesFor(ctx context.Context, ouID, projectName, agentName, envName string) (bool, error) {
+	cfg, err := s.envConfigRepo.Get(ctx, ouID, projectName, agentName, envName)
 	if err != nil {
 		if errors.Is(err, repositories.ErrAgentConfigNotFound) {
 			return false, nil
@@ -791,11 +795,21 @@ func (s *agentIdentityInjectionService) RefreshAfterRotation(ctx context.Context
 			}
 		}()
 
+		// AgentIDAsBalConfigurables may have changed during the wait, so the
+		// name set is re-read now, and the other set removed in the same write,
+		// rather than restoring the names captured before the wait.
+		asBalConfigurables, err := s.agentIDAsBalConfigurablesFor(refreshCtx, ouID, projectName, agentName, envName)
+		if err != nil {
+			s.logger.Warn("Failed to roll out pod after agent identity secret rotation", "agentName", agentName, "envName", envName, "error", err)
+			return
+		}
+		vars := agentIdentityEnvVarsAs(envVars, asBalConfigurables)
+
 		// Re-merging identical env vars is a no-op content-wise, but the call
 		// also stamps restartedAt on the ReleaseBinding — the pod rollout that
 		// makes the workload actually pick up the refreshed Secret.
 		if err := withReleaseBindingRetry(refreshCtx, func() error {
-			return s.ocClient.UpdateReleaseBindingEnvVars(refreshCtx, ouID, projectName, agentName, envName, envVars)
+			return s.ocClient.ReplaceReleaseBindingEnvVars(refreshCtx, ouID, projectName, agentName, envName, otherAgentIdentityEnvVarKeys(vars), vars)
 		}); err != nil {
 			s.logger.Warn("Failed to roll out pod after agent identity secret rotation", "agentName", agentName, "envName", envName, "error", err)
 			return

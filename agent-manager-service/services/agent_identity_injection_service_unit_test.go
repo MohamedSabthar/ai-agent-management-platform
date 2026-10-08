@@ -626,7 +626,7 @@ func TestAgentIdentityInjection_RefreshAfterRotation_StampsAnnotationAndRollsPod
 		createdReq = req
 		return &client.SecretReferenceInfo{Name: req.Name}, nil
 	}
-	oc.UpdateReleaseBindingEnvVarsFunc = func(_ context.Context, _, _, _, _ string, envVars []client.EnvVar) error {
+	oc.ReplaceReleaseBindingEnvVarsFunc = func(_ context.Context, _, _, _, _ string, _ []string, envVars []client.EnvVar) error {
 		assert.Len(t, envVars, 4)
 		close(rolled)
 		return nil
@@ -658,17 +658,72 @@ func TestAgentIdentityInjection_RefreshAfterRotation_StampsAnnotationAndRollsPod
 	assert.Equal(t, secretSyncWaitDuration("1h"), slept, "the roll must wait out the configured refresh cadence before rolling")
 }
 
+// TestAgentIdentityInjection_RefreshAfterRotation_UsesNamingModeAtRollTime
+// guards against a rotation restoring a retired identity name set: if
+// AgentIDAsBalConfigurables is switched on while the rotation waits, the roll
+// must write the BAL_CONFIG_VAR_* names and remove the AMP_AGENTID_* ones, not
+// re-add the names captured before the wait.
+func TestAgentIdentityInjection_RefreshAfterRotation_UsesNamingModeAtRollTime(t *testing.T) {
+	repo := identityRepoReturning(completedInternalBinding(), nil)
+	oc := injectableOCClient()
+
+	var gotRemoved []string
+	var gotVars []client.EnvVar
+	rolled := make(chan struct{})
+	oc.ReplaceReleaseBindingEnvVarsFunc = func(_ context.Context, _, _, _, _ string, keysToRemove []string, envVars []client.EnvVar) error {
+		gotRemoved, gotVars = keysToRemove, envVars
+		close(rolled)
+		return nil
+	}
+
+	var asBal atomic.Bool
+	envConfigRepo := &repomocks.AgentConfigRepositoryMock{
+		GetFunc: func(_ context.Context, _, _, _, _ string) (*models.AgentConfig, error) {
+			return &models.AgentConfig{AgentIDAsBalConfigurables: asBal.Load()}, nil
+		},
+	}
+	svc := NewAgentIdentityInjectionService(repo, noMCPConfigRepo(), envConfigRepo, noMCPProxyScopeRepo(), oc, "1h", discardLogger())
+	impl, ok := svc.(*agentIdentityInjectionService)
+	require.True(t, ok)
+	impl.after = func(time.Duration) <-chan time.Time {
+		asBal.Store(true) // the setting changes while the rotation waits
+		ch := make(chan time.Time, 1)
+		ch <- time.Now()
+		return ch
+	}
+
+	require.NoError(t, svc.RefreshAfterRotation(context.Background(), testIdentityOrg, testIdentityProject, testIdentityAgent, testIdentityEnv))
+
+	select {
+	case <-rolled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("rotation must roll the pod")
+	}
+	keys := make([]string, 0, len(gotVars))
+	for _, ev := range gotVars {
+		keys = append(keys, ev.Key)
+	}
+	assert.ElementsMatch(t, []string{
+		client.BalConfigVarAgentIDClientID, client.BalConfigVarAgentIDClientSecret,
+		client.BalConfigVarAgentIDTokenEndpoint, client.BalConfigVarAgentIDScopes,
+	}, keys, "the roll must use the naming mode saved at roll time")
+	assert.Subset(t, gotRemoved, []string{
+		client.EnvVarAgentIDClientID, client.EnvVarAgentIDClientSecret,
+		client.EnvVarAgentIDTokenEndpoint, client.EnvVarAgentIDScopes,
+	}, "the roll must remove the retired AMP_AGENTID_* names")
+}
+
 // TestAgentIdentityInjection_RefreshAfterRotation_CoalescesRapidRotations
 // guards against a second regenerate for the same binding, fired before the
 // first one's deferred roll runs, causing two pod rollouts instead of one:
-// only the latest rotation's roll must actually call UpdateReleaseBindingEnvVars.
+// only the latest rotation's roll must actually call ReplaceReleaseBindingEnvVars.
 func TestAgentIdentityInjection_RefreshAfterRotation_CoalescesRapidRotations(t *testing.T) {
 	repo := identityRepoReturning(completedInternalBinding(), nil)
 	oc := injectableOCClient()
 
 	var rollCount int32
 	rolled := make(chan struct{}, 2)
-	oc.UpdateReleaseBindingEnvVarsFunc = func(_ context.Context, _, _, _, _ string, _ []client.EnvVar) error {
+	oc.ReplaceReleaseBindingEnvVarsFunc = func(_ context.Context, _, _, _, _ string, _ []string, _ []client.EnvVar) error {
 		atomic.AddInt32(&rollCount, 1)
 		rolled <- struct{}{}
 		return nil
@@ -728,7 +783,7 @@ func TestAgentIdentityInjection_RefreshAfterRotation_AbortsOnShutdown(t *testing
 	oc := injectableOCClient()
 
 	rolled := make(chan struct{})
-	oc.UpdateReleaseBindingEnvVarsFunc = func(_ context.Context, _, _, _, _ string, _ []client.EnvVar) error {
+	oc.ReplaceReleaseBindingEnvVarsFunc = func(_ context.Context, _, _, _, _ string, _ []string, _ []client.EnvVar) error {
 		close(rolled)
 		return nil
 	}
@@ -764,7 +819,7 @@ func TestAgentIdentityInjection_RefreshAfterRotation_AbortsOnShutdown(t *testing
 
 // TestAgentIdentityInjection_RefreshAfterRotation_CancelsInFlightRollOnShutdown
 // guards the roll itself, not just the wait before it: shutdown must cancel
-// an already-in-flight UpdateReleaseBindingEnvVars call rather than letting
+// an already-in-flight ReplaceReleaseBindingEnvVars call rather than letting
 // it run to completion.
 func TestAgentIdentityInjection_RefreshAfterRotation_CancelsInFlightRollOnShutdown(t *testing.T) {
 	repo := identityRepoReturning(completedInternalBinding(), nil)
@@ -772,7 +827,7 @@ func TestAgentIdentityInjection_RefreshAfterRotation_CancelsInFlightRollOnShutdo
 
 	callStarted := make(chan struct{})
 	cancelled := make(chan struct{})
-	oc.UpdateReleaseBindingEnvVarsFunc = func(ctx context.Context, _, _, _, _ string, _ []client.EnvVar) error {
+	oc.ReplaceReleaseBindingEnvVarsFunc = func(ctx context.Context, _, _, _, _ string, _ []string, _ []client.EnvVar) error {
 		close(callStarted)
 		<-ctx.Done() // blocks until the shutdown bridge cancels this call's context
 		close(cancelled)
@@ -796,7 +851,7 @@ func TestAgentIdentityInjection_RefreshAfterRotation_CancelsInFlightRollOnShutdo
 	select {
 	case <-callStarted:
 	case <-time.After(2 * time.Second):
-		t.Fatal("the roll must start calling UpdateReleaseBindingEnvVars")
+		t.Fatal("the roll must start calling ReplaceReleaseBindingEnvVars")
 	}
 
 	shutdownCancel() // app starts shutting down while the roll call is in flight

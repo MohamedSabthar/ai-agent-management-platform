@@ -343,6 +343,11 @@ export function ConfigureBuildDrawer({
     ) => {
     setFormData(prevData => {
       const newData: ConfigureBuildFormValues = { ...prevData, [field]: value };
+      // A Ballerina chat agent needs a port; seed the default it shows.
+      if (field === 'language' && value !== prevData.language && newData.interfaceType === "DEFAULT") {
+        newData.port = isBallerinaChat(newData) ? BALLERINA_CHAT_DEFAULT_PORT : undefined;
+        setFieldError('port', undefined);
+      }
 
       const error = validateField(field, value, newData);
       setFieldError(field, error);
@@ -384,7 +389,7 @@ export function ConfigureBuildDrawer({
           interfaceType: value,
           ...(value === "DEFAULT" ? {
             openApiPath: "",
-            port: undefined,
+            port: prevData.language === "ballerina" ? BALLERINA_CHAT_DEFAULT_PORT : undefined,
             basePath: "/",
           } : {}),
           ...(value === "A2A" ? {
