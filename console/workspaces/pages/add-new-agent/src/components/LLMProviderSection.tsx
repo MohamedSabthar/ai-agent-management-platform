@@ -73,7 +73,11 @@ import {
   type PolicySelection as GuardrailSelection,
 } from "@agent-management-platform/shared-component";
 import { AGENT_ENV_KEY_MAX_LENGTH, type LLMProviderFormEntry } from "../form/schema";
-import { envVarNaming, type EnvVarNaming } from "../utils/envVarNaming";
+import {
+  envVarNaming,
+  renameGeneratedVarNames,
+  type EnvVarNaming,
+} from "../utils/envVarNaming";
 import {
   absoluteRouteMap,
   type CatalogRateLimitingSummary,
@@ -635,6 +639,17 @@ export const LLMProviderSection: React.FC<LLMProviderSectionProps> = ({
     () => envVarNaming(agentDisplayName, agentLanguage),
     [agentDisplayName, agentLanguage],
   );
+
+  // Names are stored when an entry is added, so a later display name or
+  // language change would leave them at the old defaults. Move the ones still
+  // at their defaults; keep any the user edited.
+  const previousNamingRef = useRef(naming);
+  React.useEffect(() => {
+    const previous = previousNamingRef.current;
+    previousNamingRef.current = naming;
+    if (previous === naming) return;
+    setLLMProviders((entries) => renameGeneratedVarNames(entries, previous, naming, { url: "llmUrl", apikey: "llmApiKey" }));
+  }, [naming, setLLMProviders]);
 
   const currentDrawerProviderUuid =
     editingIndex !== null

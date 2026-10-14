@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Box,
   Button,
   CircularProgress,
@@ -134,7 +135,7 @@ export function EditDeployConfigDrawer({
   const securityRef = useRef<SecurityConfigHandle>(null);
   const [securityValid, setSecurityValid] = useState(true);
 
-  const { data: configurations } = useGetAgentConfigurations(
+  const { data: configurations, isError: isConfigurationsError } = useGetAgentConfigurations(
     { orgName, projName, agentName },
     { environment },
   );
@@ -394,6 +395,12 @@ export function EditDeployConfigDrawer({
       <DrawerHeader icon={<SlidersVertical size={24} />} title={title} onClose={onClose} />
       <DrawerContent>
         <Form.Stack spacing={3}>
+          {isConfigurationsError && !seededRef.current && (
+            <Alert severity="error">
+              Could not load this environment&apos;s current configuration, so it
+              can&apos;t be edited right now. Close the drawer and try again.
+            </Alert>
+          )}
           {showSecurity && (
             <SecurityConfigSections
               ref={securityRef}
@@ -599,7 +606,10 @@ export function EditDeployConfigDrawer({
                 color="primary"
                 onClick={handleSave}
                 disabled={
-                  isPending || isRegenerating || (showSecurity && !securityValid)
+                  // Until the saved configuration has seeded the form, Apply would
+                  // send its initial values (e.g. AgentID configurables off) as edits.
+                  isPending || isRegenerating || !seededRef.current
+                  || (showSecurity && !securityValid)
                 }
                 startIcon={isPending ? <CircularProgress size={16} /> : undefined}
               >

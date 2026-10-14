@@ -75,7 +75,11 @@ import {
 import { AGENT_ENV_KEY_MAX_LENGTH, type MCPProxyFormEntry } from "../form/schema";
 import { absoluteRouteMap } from "@agent-management-platform/types";
 import { mcpEntryHasAPIKeyVar } from "../utils/mcpEnvVarNames";
-import { envVarNaming, type EnvVarNaming } from "../utils/envVarNaming";
+import {
+  envVarNaming,
+  renameGeneratedVarNames,
+  type EnvVarNaming,
+} from "../utils/envVarNaming";
 
 interface ProxyInfo {
   id: string;
@@ -529,6 +533,20 @@ export const MCPProxySection: React.FC<MCPProxySectionProps> = ({
     () => envVarNaming(agentDisplayName, agentLanguage),
     [agentDisplayName, agentLanguage],
   );
+
+  // Names are stored when an entry is added, so a later display name or
+  // language change would leave them at the old defaults. Move the ones still
+  // at their defaults; keep any the user edited.
+  const previousNamingRef = useRef(naming);
+  useEffect(() => {
+    const previous = previousNamingRef.current;
+    previousNamingRef.current = naming;
+    if (previous === naming) return;
+    setMCPProxies((entries) => renameGeneratedVarNames(entries, previous, naming, {
+      url: "mcpUrl",
+      apikey: "mcpApiKey",
+    }));
+  }, [naming, setMCPProxies]);
 
   const currentDrawerProxyId =
     editingIndex !== null

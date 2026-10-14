@@ -362,6 +362,12 @@ func TestUpdateAgentDeploySettings_AgentIDAsBalConfigurables(t *testing.T) {
 		assert.False(t, persisted.AgentIDAsBalConfigurables)
 		assert.Equal(t, []string{"dev"}, reconciled)
 	})
+	t.Run("an explicit unchanged value re-injects, so a failed apply can be retried", func(t *testing.T) {
+		persisted, reconciled, err := deploySettingsAgentIDHarness(t, true, ballerina, &on)
+		require.NoError(t, err)
+		assert.True(t, persisted.AgentIDAsBalConfigurables)
+		assert.Equal(t, []string{"dev"}, reconciled)
+	})
 	t.Run("an unrelated settings edit keeps the saved value and rolls nothing", func(t *testing.T) {
 		persisted, reconciled, err := deploySettingsAgentIDHarness(t, true, ballerina, nil)
 		require.NoError(t, err)
@@ -472,4 +478,70 @@ func TestPromoteAgent_AgentIDAsBalConfigurables_RequestOverridesSource(t *testin
 	assert.False(t, prefixed)
 	require.NotNil(t, upserted)
 	assert.False(t, upserted.AgentIDAsBalConfigurables)
+}
+
+// kindVersionStub serves one kind version; CreateAgent needs nothing else from
+// the kind service.
+type kindVersionStub struct {
+	AgentKindService
+	version *models.AgentKindVersion
+}
+
+func (s *kindVersionStub) GetKindVersion(context.Context, string, string, string) (*models.AgentKindVersion, error) {
+	return s.version, nil
+}
+
+var errStopAfterValidation = errors.New("stop after validation")
+
+// createFromKindHarness creates an agent from a kind whose source agent is
+// built with language, requesting agentIdAsBallerinaConfigurables=true. The
+// request carries no build of its own, as a kind-based request does. Creation
+// stops at the first call past validation (GetOrganization), which reports
+// errStopAfterValidation.
+func createFromKindHarness(t *testing.T, language string) error {
+	t.Helper()
+	on := true
+	ocClient := &clientmocks.OpenChoreoClientMock{
+		GetComponentFunc: func(_ context.Context, _, _, _ string) (*models.AgentResponse, error) {
+			subType := string(utils.AgentSubTypeCustomAPI)
+			return &models.AgentResponse{
+				Type:  models.AgentType{Type: string(utils.AgentTypeAPI), SubType: subType},
+				Build: &models.Build{Type: "buildpack", Buildpack: &models.BuildpackConfig{Language: language}},
+			}, nil
+		},
+		GetOrganizationFunc: func(context.Context, string) (*models.OrganizationResponse, error) {
+			return nil, errStopAfterValidation
+		},
+	}
+	s := &agentManagerService{
+		ocClient: ocClient,
+		agentKindService: &kindVersionStub{version: &models.AgentKindVersion{
+			Version: "v1",
+			ImageId: "registry/kind-image:v1",
+			Kind:    &models.AgentKind{Name: "leave-kind", ProjectName: "kinds", AgentName: "leave-source"},
+		}},
+		logger: discardLogger(),
+	}
+	return s.CreateAgent(context.Background(), "acme", "proj1", &spec.CreateAgentRequest{
+		Name: "from-kind",
+		Provisioning: spec.Provisioning{
+			Type:      string(utils.InternalAgent),
+			AgentKind: &spec.ProvisioningAgentKind{Name: "leave-kind", Version: "v1"},
+		},
+		Configurations: &spec.Configurations{AgentIdAsBallerinaConfigurables: &on},
+	})
+}
+
+// A kind-based request has no build until the kind supplies its source
+// agent's, so the Ballerina-only check must judge that build, not the empty
+// one in the request.
+func TestCreateAgent_FromKind_AgentIDAsBalConfigurablesJudgesKindBuild(t *testing.T) {
+	t.Run("accepted for a Ballerina kind", func(t *testing.T) {
+		err := createFromKindHarness(t, string(utils.LanguageBallerina))
+		assert.ErrorIs(t, err, errStopAfterValidation)
+	})
+	t.Run("rejected for a Python kind before anything is created", func(t *testing.T) {
+		err := createFromKindHarness(t, string(utils.LanguagePython))
+		assert.ErrorIs(t, err, utils.ErrInvalidInput)
+	})
 }

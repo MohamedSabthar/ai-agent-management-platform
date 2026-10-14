@@ -17,6 +17,7 @@
  */
 
 import { ballerinaConfigVarName } from "@agent-management-platform/shared-component";
+import { AGENT_ENV_KEY_MAX_LENGTH } from "../form/schema";
 
 export type EnvVarNameKind = "llmUrl" | "llmApiKey" | "mcpUrl" | "mcpApiKey";
 
@@ -67,6 +68,17 @@ const ENV_VAR_SUFFIX: Record<EnvVarNameKind, (n: number) => string> = {
  * (`myAgent1Url`) and derive the env var from it (`BAL_CONFIG_VAR_MYAGENT1URL`);
  * every other agent keeps `MY_AGENT_1_URL`.
  */
+// A display name may run to 100 characters, but a variable name is capped at
+// AGENT_ENV_KEY_MAX_LENGTH, so the base is cut to leave room for the prefix and
+// the longest suffix (up to a two-digit entry number).
+const MAX_ENTRY_NUMBER = 99;
+const BALLERINA_BASE_MAX_LENGTH =
+  AGENT_ENV_KEY_MAX_LENGTH -
+  ballerinaConfigVarName("").length -
+  CONFIGURABLE_SUFFIX.mcpApiKey(MAX_ENTRY_NUMBER).length;
+const UPPER_BASE_MAX_LENGTH =
+  AGENT_ENV_KEY_MAX_LENGTH - ENV_VAR_SUFFIX.mcpApiKey(MAX_ENTRY_NUMBER).length;
+
 export function envVarNaming(
   displayName: string | undefined,
   language: string | undefined,
@@ -74,6 +86,7 @@ export function envVarNaming(
   if (language === "ballerina") {
     let base = toCamelCase(displayName) || "agent";
     if (/^[0-9]/.test(base)) base = `agent${base}`;
+    base = base.slice(0, BALLERINA_BASE_MAX_LENGTH);
     const configurable = (kind: EnvVarNameKind, index: number) =>
       `${base}${CONFIGURABLE_SUFFIX[kind](index + 1)}`;
     return {
@@ -81,9 +94,46 @@ export function envVarNaming(
       configurable,
     };
   }
-  const upper = displayName ? displayName.toUpperCase().replace(/[^A-Z0-9]/g, "_") : "AGENT";
+  const upper = displayName
+    ? displayName.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, UPPER_BASE_MAX_LENGTH)
+    : "AGENT";
   return {
     name: (kind, index) => `${upper}${ENV_VAR_SUFFIX[kind](index + 1)}`,
     configurable: () => undefined,
   };
+}
+
+/**
+ * Moves the variable names an entry still has at its generated defaults over
+ * to `to`'s defaults, for when the agent's display name or language changes
+ * after entries were added. A name the user edited no longer matches its old
+ * default, so it is kept. Returns `entries` itself when nothing changed.
+ */
+export function renameGeneratedVarNames<
+  T extends { urlVarName?: string; apikeyVarName?: string },
+>(
+  entries: T[],
+  from: EnvVarNaming,
+  to: EnvVarNaming,
+  kinds: { url: EnvVarNameKind; apikey: EnvVarNameKind },
+): T[] {
+  let changed = false;
+  const renamed = entries.map((entry, index) => {
+    const rename = (current: string | undefined, kind: EnvVarNameKind) =>
+      current !== undefined && current === from.name(kind, index)
+        ? to.name(kind, index)
+        : current;
+    const urlVarName = rename(entry.urlVarName, kinds.url);
+    const apikeyVarName = rename(entry.apikeyVarName, kinds.apikey);
+    if (urlVarName === entry.urlVarName && apikeyVarName === entry.apikeyVarName) {
+      return entry;
+    }
+    changed = true;
+    return {
+      ...entry,
+      urlVarName,
+      ...(apikeyVarName !== undefined ? { apikeyVarName } : {}),
+    };
+  });
+  return changed ? renamed : entries;
 }

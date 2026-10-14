@@ -1123,6 +1123,7 @@ func (s *agentManagerService) GetAgent(ctx context.Context, ouID string, project
 				defaultEnabled := true
 				defaultCORSEnabled := true
 				defaultOAuthDisabled := false
+				defaultAgentIDAsBal := false
 				defCORS := config.GetAgentWorkloadConfig().CORS
 				defaultResilience := client.DefaultResilienceTimeoutSeconds
 				agent.Configurations = &models.Configurations{
@@ -1137,7 +1138,7 @@ func (s *agentManagerService) GetAgent(ctx context.Context, ouID string, project
 					},
 					EnableOAuthSecurity:       &defaultOAuthDisabled,
 					ResilienceTimeoutSeconds:  &defaultResilience,
-					AgentIDAsBalConfigurables: &defaultOAuthDisabled,
+					AgentIDAsBalConfigurables: &defaultAgentIDAsBal,
 				}
 			} else if configErr != nil {
 				s.logger.Error("Failed to read agent config from database", "agentName", agentName, "environment", lowestEnv, "error", configErr)
@@ -1375,12 +1376,6 @@ func (s *agentManagerService) CreateAgent(ctx context.Context, ouID string, proj
 	var requestedVersion *string
 	autoInstr := true
 	if req.Configurations != nil {
-		// Rejected before anything is created: only a Ballerina agent can opt in.
-		isBallerina := req.Build != nil && req.Build.BuildpackBuild != nil &&
-			req.Build.BuildpackBuild.Buildpack.Language == string(utils.LanguageBallerina)
-		if _, err := resolveAgentIDAsBalConfigurables(isBallerina, nil, req.Configurations.AgentIdAsBallerinaConfigurables); err != nil {
-			return err
-		}
 		requestedVersion = req.Configurations.InstrumentationVersion.Get()
 		if req.Configurations.EnableAutoInstrumentation != nil {
 			autoInstr = *req.Configurations.EnableAutoInstrumentation
@@ -1455,6 +1450,17 @@ func (s *agentManagerService) CreateAgent(ctx context.Context, ouID string, proj
 			}
 		}
 		imageID = kindVersion.ImageId
+	}
+
+	// Rejected before anything is created: only a Ballerina agent can opt in.
+	// Checked after the kind block, which replaces req.Build with the build the
+	// agent will actually run (it is empty in a kind-based request).
+	if req.Configurations != nil {
+		isBallerina := req.Build != nil && req.Build.BuildpackBuild != nil &&
+			req.Build.BuildpackBuild.Buildpack.Language == string(utils.LanguageBallerina)
+		if _, err := resolveAgentIDAsBalConfigurables(isBallerina, nil, req.Configurations.AgentIdAsBallerinaConfigurables); err != nil {
+			return err
+		}
 	}
 
 	// Pair-check the python/instrumentation combo after any kind-based
@@ -5204,7 +5210,10 @@ func (s *agentManagerService) UpdateAgentDeploySettings(ctx context.Context, ouI
 	// Deploy settings never rewrite env vars, so a changed AgentID name set is
 	// applied here: the reconcile reads the setting just persisted and swaps the
 	// name sets in one write (rolling the pod), or no-ops if already in sync.
-	if agentIDNamesChanged {
+	// An explicit request reconciles even when the saved value already matches:
+	// a reconcile that failed after the save leaves the two in agreement, so
+	// comparing them alone would make a retry skip the names it never applied.
+	if agentIDNamesChanged || req.AgentIdAsBallerinaConfigurables != nil {
 		if err := s.agentIdentityInjection.ReconcileForEnvironment(ctx, ouID, projectName, agentName, req.EnvironmentName); err != nil {
 			s.logger.Error("Failed to apply AgentID env var names after deploy settings update", "agentName", agentName, "environment", req.EnvironmentName, "error", err)
 			return fmt.Errorf("deploy settings saved but failed to apply AgentID env var names in %q (retry to reconcile): %w", req.EnvironmentName, err)

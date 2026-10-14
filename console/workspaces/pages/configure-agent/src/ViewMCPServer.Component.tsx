@@ -383,12 +383,21 @@ export const ViewMCPServerComponent = () => {
   });
   // The AgentID variable names are per environment: a Ballerina agent can take
   // them as BAL_CONFIG_VAR_AMPAGENTID* configurables in some environments.
-  const { data: selectedEnvConfig } = useGetAgentConfigurations(
+  const {
+    data: selectedEnvConfig,
+    isPending: isSelectedEnvConfigPending,
+    isError: isSelectedEnvConfigError,
+    error: selectedEnvConfigError,
+  } = useGetAgentConfigurations(
     { orgName: orgId, projName: projectId, agentName: agentId },
     { environment: selectedEnvName },
   );
   const agentIdAsBalConfigurables =
     selectedEnvConfig?.agentIdAsBallerinaConfigurables === true;
+  // Until the environment's configuration loads, which AgentID name set it
+  // injects is unknown, and guessing the plain names would be wrong for an
+  // environment that injects Ballerina configurables.
+  const isAgentIdNamingUnknown = isSelectedEnvConfigPending || isSelectedEnvConfigError;
   const isExternal = agent?.provisioning?.type === "external";
   const hasBuildInProgress = useHasBuildInProgress(
     { orgName: orgId, projName: projectId, agentName: agentId },
@@ -951,43 +960,54 @@ export const ViewMCPServerComponent = () => {
                 MCP Server&apos;s own security settings.
               </Typography>
             </Alert>
-            <Form.Section>
-              <EnvironmentVariablesReference
-                variant="plain"
-                title={agentIdAsBalConfigurables ? "AgentID Ballerina Configurables" : "AgentID Variables"}
-                description={
-                  agentIdAsBalConfigurables
-                    ? `In ${selectedEnvName}, these values are injected as Ballerina configurables alongside the URL above. Declare them in your program, or the agent will fail to start.`
-                    : "These names are fixed, only their values change per environment, and they're injected automatically at runtime alongside the URL above."
-                }
-                nameColumnLabel={agentIdAsBalConfigurables ? "Configurable Name" : undefined}
-                rows={
-                  agentIdAsBalConfigurables
-                    ? AGENTID_BALLERINA_CONFIGURABLE_ROWS
-                    : AGENTID_ENV_VAR_ROWS
-                }
+            {isAgentIdNamingUnknown ? (
+              <ConnectQueryFallback
+                isLoading={!isSelectedEnvConfigError}
+                error={selectedEnvConfigError}
               />
-              {agentIdAsBalConfigurables && (
-                <Box sx={{ mt: 2 }}>
-                  <BallerinaConfigurablesNotice
-                    configurableNames={AGENTID_BALLERINA_CONFIGURABLE_ROWS.map((row) => row.name)}
-                    fieldId="view-mcp-agentid-configurables"
-                  />
-                </Box>
-              )}
-            </Form.Section>
-            <Form.Section>
-              <Form.Subheader>Integration Guide</Form.Subheader>
-              <Typography variant="body2" color="text.secondary">
-                Copy this pattern into your agent code to request a token
-                and call the tool with it.
-              </Typography>
-              <CodeBlock
-                language="python"
-                fieldId="mcp-identity-python-snippet"
-                code={agentIDPythonSnippet}
-              />
-            </Form.Section>
+            ) : (
+              <Form.Section>
+                <EnvironmentVariablesReference
+                  variant="plain"
+                  title={agentIdAsBalConfigurables ? "AgentID Ballerina Configurables" : "AgentID Variables"}
+                  description={
+                    agentIdAsBalConfigurables
+                      ? `In ${selectedEnvName}, these values are injected as Ballerina configurables alongside the URL above. Declare them in your program, or the agent will fail to start.`
+                      : "These names are fixed, only their values change per environment, and they're injected automatically at runtime alongside the URL above."
+                  }
+                  nameColumnLabel={agentIdAsBalConfigurables ? "Configurable Name" : undefined}
+                  rows={
+                    agentIdAsBalConfigurables
+                      ? AGENTID_BALLERINA_CONFIGURABLE_ROWS
+                      : AGENTID_ENV_VAR_ROWS
+                  }
+                />
+                {agentIdAsBalConfigurables && (
+                  <Box sx={{ mt: 2 }}>
+                    <BallerinaConfigurablesNotice
+                      configurableNames={AGENTID_BALLERINA_CONFIGURABLE_ROWS.map((row) => row.name)}
+                      fieldId="view-mcp-agentid-configurables"
+                    />
+                  </Box>
+                )}
+              </Form.Section>
+            )}
+            {/* The Python guide reads AMP_AGENTID_*, so it only fits the plain
+                names; with configurables, the notice above has the declarations. */}
+            {!isAgentIdNamingUnknown && !agentIdAsBalConfigurables && (
+              <Form.Section>
+                <Form.Subheader>Integration Guide</Form.Subheader>
+                <Typography variant="body2" color="text.secondary">
+                  Copy this pattern into your agent code to request a token
+                  and call the tool with it.
+                </Typography>
+                <CodeBlock
+                  language="python"
+                  fieldId="mcp-identity-python-snippet"
+                  code={agentIDPythonSnippet}
+                />
+              </Form.Section>
+            )}
           </Stack>
         ) : (
           <Form.Section>
