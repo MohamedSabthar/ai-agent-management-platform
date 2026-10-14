@@ -221,6 +221,10 @@ export function EditDeployConfigDrawer({
   const isPending = isDeploying || isUpdating || isUpdatingSettings;
 
   const handleSave = useCallback(() => {
+    // Every path into a save (Apply, and the confirmation after a token
+    // regeneration) waits for the seed: before it, env/files are empty and the
+    // toggles hold their defaults, so a save would overwrite the real values.
+    if (!seededRef.current) return;
     const validEnv = toSubmittableEnv(env);
     const validFiles = files
       .filter((f) => f.key && f.mountPath)
@@ -480,7 +484,7 @@ export function EditDeployConfigDrawer({
                         isRegenerating ? <CircularProgress size={14} /> : <RefreshCw size={14} />
                       }
                       onClick={handleRegenerateToken}
-                      disabled={isRegenerating || isPending}
+                      disabled={isRegenerating || isPending || !seededRef.current}
                     >
                       Regenerate
                     </Button>

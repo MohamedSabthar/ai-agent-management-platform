@@ -106,8 +106,12 @@ export function envVarNaming(
 /**
  * Moves the variable names an entry still has at its generated defaults over
  * to `to`'s defaults, for when the agent's display name or language changes
- * after entries were added. A name the user edited no longer matches its old
+ * after entries were added. A name the user edited no longer matches any old
  * default, so it is kept. Returns `entries` itself when nothing changed.
+ *
+ * A name is matched against every entry number, not just the entry's current
+ * position: removing an entry shifts the ones after it, but they keep the names
+ * generated for their old number, and keep that number when renamed.
  */
 export function renameGeneratedVarNames<
   T extends { urlVarName?: string; apikeyVarName?: string },
@@ -117,12 +121,15 @@ export function renameGeneratedVarNames<
   to: EnvVarNaming,
   kinds: { url: EnvVarNameKind; apikey: EnvVarNameKind },
 ): T[] {
+  const rename = (current: string | undefined, kind: EnvVarNameKind) => {
+    if (current === undefined) return current;
+    for (let index = 0; index < MAX_ENTRY_NUMBER; index++) {
+      if (current === from.name(kind, index)) return to.name(kind, index);
+    }
+    return current;
+  };
   let changed = false;
-  const renamed = entries.map((entry, index) => {
-    const rename = (current: string | undefined, kind: EnvVarNameKind) =>
-      current !== undefined && current === from.name(kind, index)
-        ? to.name(kind, index)
-        : current;
+  const renamed = entries.map((entry) => {
     const urlVarName = rename(entry.urlVarName, kinds.url);
     const apikeyVarName = rename(entry.apikeyVarName, kinds.apikey);
     if (urlVarName === entry.urlVarName && apikeyVarName === entry.apikeyVarName) {

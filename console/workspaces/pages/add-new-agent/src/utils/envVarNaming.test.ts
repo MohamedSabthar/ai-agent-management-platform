@@ -70,6 +70,16 @@ describe("renameGeneratedVarNames", () => {
     ]);
   });
 
+  it("still recognises defaults that shifted when an earlier entry was removed", () => {
+    // The first entry was removed, so the second (with entry-2 names) is now first.
+    const entries = [
+      { urlVarName: "LEAVE_ASSISTANT_2_URL", apikeyVarName: "LEAVE_ASSISTANT_2_API_KEY" },
+    ];
+    expect(renameGeneratedVarNames(entries, python, ballerina, llmKinds)).toEqual([
+      { urlVarName: "BAL_CONFIG_VAR_LEAVEASSISTANT2URL", apikeyVarName: "BAL_CONFIG_VAR_LEAVEASSISTANT2APIKEY" },
+    ]);
+  });
+
   it("keeps names the user edited", () => {
     const entries = [{ urlVarName: "MY_URL", apikeyVarName: "LEAVE_ASSISTANT_1_API_KEY" }];
     expect(renameGeneratedVarNames(entries, python, ballerina, llmKinds)).toEqual([
