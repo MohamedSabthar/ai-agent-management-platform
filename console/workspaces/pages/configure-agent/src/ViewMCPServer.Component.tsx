@@ -399,6 +399,10 @@ export const ViewMCPServerComponent = () => {
   // environment that injects Ballerina configurables.
   const isAgentIdNamingUnknown = isSelectedEnvConfigPending || isSelectedEnvConfigError;
   const isExternal = agent?.provisioning?.type === "external";
+  // The integration guides are Python snippets, so they have no place for a
+  // Ballerina agent.
+  const isBallerinaAgent =
+    agent?.build?.type === "buildpack" && agent.build.buildpack.language === "ballerina";
   const hasBuildInProgress = useHasBuildInProgress(
     { orgName: orgId, projName: projectId, agentName: agentId },
     { enabled: !!agent && !isExternal && !agent.kindName },
@@ -687,6 +691,11 @@ export const ViewMCPServerComponent = () => {
     (isExternal && !!providerConfig) ||
     (!isExternal && (envVarRows.length > 0 || usesIdentitySecurity));
 
+  // Without a guide, a Ballerina agent on a URL/API-key server has nothing
+  // below the variable table.
+  const hasGuideSection =
+    isMCPSecurityUnresolved || usesIdentitySecurity || !isBallerinaAgent;
+
   const envVarsPanel =
     showPanel &&
     (isExternal && providerConfig ? (
@@ -905,6 +914,7 @@ export const ViewMCPServerComponent = () => {
     ) : (
       <EnvironmentVariablesGuideDrawer
         open={panelOpen}
+        title={isBallerinaAgent ? "Environment Variables" : undefined}
         // Closing discards the renamed variables (rather than hiding them from
         // the guard while they sit in state), so confirm first when dirty.
         onClose={() =>
@@ -936,7 +946,7 @@ export const ViewMCPServerComponent = () => {
           }))
         }
       >
-        <Divider sx={{ my: 2 }} />
+        {hasGuideSection && <Divider sx={{ my: 2 }} />}
         {isMCPSecurityUnresolved ? (
           isLoadingProxyDetails ? (
             <Skeleton variant="rounded" height={160} />
@@ -994,7 +1004,7 @@ export const ViewMCPServerComponent = () => {
             )}
             {/* The Python guide reads AMP_AGENTID_*, so it only fits the plain
                 names; with configurables, the notice above has the declarations. */}
-            {!isAgentIdNamingUnknown && !agentIdAsBalConfigurables && (
+            {!isAgentIdNamingUnknown && !agentIdAsBalConfigurables && !isBallerinaAgent && (
               <Form.Section>
                 <Form.Subheader>Integration Guide</Form.Subheader>
                 <Typography variant="body2" color="text.secondary">
@@ -1009,7 +1019,7 @@ export const ViewMCPServerComponent = () => {
               </Form.Section>
             )}
           </Stack>
-        ) : (
+        ) : isBallerinaAgent ? null : (
           <Form.Section>
             <Form.Subheader>Integration Guide</Form.Subheader>
             <Typography variant="body2" color="text.secondary">
@@ -1043,7 +1053,9 @@ export const ViewMCPServerComponent = () => {
           >
             {isExternal
               ? "Connect to MCP Server"
-              : "Environment Variables & Integration Guide"}
+              : isBallerinaAgent
+                ? "Environment Variables"
+                : "Environment Variables & Integration Guide"}
           </Button>
         ) : undefined
       }
